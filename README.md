@@ -1,80 +1,166 @@
-# FGD
-CVPR 2022 Paper: [Focal and Global Knowledge Distillation for Detectors](https://arxiv.org/abs/2111.11837)
-## Install MMDetection and MS COCO2017
-  - Our codes are based on [MMDetection](https://github.com/open-mmlab/mmdetection). Please follow the installation of MMDetection and make sure you can run it successfully.
-  - This repo uses mmdet==2.11.0 and mmcv-full==1.2.4
-  - If you want to use higher mmdet version, you may have to change the optimizer in apis/train.py and build_detector in tools/train.py.
-  - For mmdet>=2.12.0, if you want to use inheriting strategy, you have to initalize the student with teacher's parameters after model.init_weights().
-## Higher mmdet and mmcv-full version
-  - You can refer [MGD](https://github.com/yzd-v/MGD) to change model.init_weights() in [train.py](https://github.com/yzd-v/FGD/tree/master/tools/train.py) and self.student.init_weights() in [distiller.py](https://github.com/yzd-v/FGD/tree/master/mmdet/distillation/distillers/detection_distiller.py).
-## Add and Replace the codes
-  - Add the configs/. in our codes to the configs/ in mmdetectin's codes.
-  - Add the mmdet/distillation/. in our codes to the mmdet/ in mmdetectin's codes.
-  - Replace the mmdet/apis/train.py and tools/train.py in mmdetection's codes with mmdet/apis/train.py and tools/train.py in our codes.
-  - Add pth_transfer.py to mmdetection's codes.
-  - Unzip COCO dataset into data/coco/
-## Train
+<div align="center">
+  <img src="resources/mmdet-logo.png" width="600"/>
+</div>
 
-```
-#single GPU
-python tools/train.py configs/distillers/fgd/fgd_retina_rx101_64x4d_distill_retina_r50_fpn_2x_coco.py
+**News**: We released the technical report on [ArXiv](https://arxiv.org/abs/1906.07155).
 
-#multi GPU
-bash tools/dist_train.sh configs/distillers/fgd/fgd_retina_rx101_64x4d_distill_retina_r50_fpn_2x_coco.py 8
-```
+Documentation: https://mmdetection.readthedocs.io/
 
-## Transfer
-```
-# Tansfer the FGD model into mmdet model
-python pth_transfer.py --fgd_path $fgd_ckpt --output_path $new_mmdet_ckpt
-```
-## Test
+## Introduction
 
-```
-#single GPU
-python tools/test.py configs/retinanet/retinanet_r50_fpn_2x_coco.py $new_mmdet_ckpt --eval bbox
+English | [简体中文](README_zh-CN.md)
 
-#multi GPU
-bash tools/dist_test.sh configs/retinanet/retinanet_r50_fpn_2x_coco.py $new_mmdet_ckpt 8 --eval bbox
-```
-## Results
+MMDetection is an open source object detection toolbox based on PyTorch. It is
+a part of the [OpenMMLab](https://openmmlab.com/) project.
 
-|    Model    |  Backbone  | Baseline(mAP) | +FGD(mAP) |                            config                            |                          weight                          | code |
-| :---------: | :--------: | :-----------: | :-------: | :----------------------------------------------------------: | :------------------------------------------------------: | :--: |
-|  RetinaNet  | ResNet-50  |     37.4      |   40.7    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/retinanet/retinanet_r50_fpn_2x_coco.py) | [baidu](https://pan.baidu.com/s/1TwF9W13eHg6Sxkrr-4VTqg) | wsfw |
-|  RetinaNet  | ResNet-101 |     38.9      |   41.7    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/retinanet/retinanet_r101_fpn_2x_coco.py) |                                                          |      |
-| Faster RCNN | ResNet-50  |     38.4      |   42.0    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/faster_rcnn/faster_rcnn_r50_fpn_2x_coco.py) | [baidu](https://pan.baidu.com/s/14WjoMqxILoPaKfY5QsCK8w) | dgpf |
-| Faster RCNN | ResNet-101 |     39.8      |   44.1    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/faster_rcnn/faster_rcnn_r101_fpn_2x_coco.py) |                                                          |      |
-|  RepPoints  | ResNet-50  |     38.6      |   42.0    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/reppoints/reppoints_moment_r50_fpn_gn-neck+head_2x_coco.py) | [baidu](https://pan.baidu.com/s/1EJo9uQuZhimm7HI92TNThQ) | qx5d |
-|  RepPoints  | ResNet-101 |     40.5      |   43.8    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/reppoints/reppoints_moment_r101_fpn_gn-neck+head_2x_coco.py) |                                                          |      |
-|    FCOS     | ResNet-50  |     38.5      |   42.7    | [config](https://github.com/yzd-v/FGD/blob/master/configs/fcos/fcos_center-normbbox-giou_r50_caffe_fpn_gn-head_mstrain_1x_coco.py) | [baidu](https://pan.baidu.com/s/16uCTa81ZzG7EoizdfnXhzQ) | sedt |
-|  MaskRCNN   | ResNet-50  |     39.2      |   42.1    | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/mask_rcnn/mask_rcnn_r50_fpn_2x_coco.py) | [baidu](https://pan.baidu.com/s/101eOFcD8JDwqrFuYcxcBIA) | sv8m |
-|     GFL     | ResNet-50  |     40.2      |   43.5    | [config](https://github.com/open-mmlab/mmdetection/blob/master/configs/gfl/gfl_r50_fpn_1x_coco.py) |                                                          |      |
+The master branch works with **PyTorch 1.3+**.
+The old v1.x branch works with PyTorch 1.1 to 1.4, but v2.0 is strongly recommended for faster speed, higher performance, better design and more friendly usage.
 
-|  Model   | Backbone  | Baseline(Mask mAP) | +FGD(Mask mAP) |                            config                            |                          weight                          | code |
-| :------: | :-------: | :----------------: | :------------: | :----------------------------------------------------------: | :------------------------------------------------------: | :--: |
-|   SOLO   | ResNet-50 |        33.1        |      36.0      | [config](https://github.com/open-mmlab/mmdetection/blob/master/configs/solo/solo_r50_fpn_1x_coco.py) |                                                          |      |
-| MaskRCNN | ResNet-50 |        35.4        |      37.8      | [config](https://github.com/open-mmlab/mmdetection/tree/master/configs/mask_rcnn/mask_rcnn_r50_fpn_2x_coco.py) | [baidu](https://pan.baidu.com/s/101eOFcD8JDwqrFuYcxcBIA) | sv8m |
+![demo image](resources/coco_test_12510.jpg)
 
-| Student | Teacher | Baseline(mAP) | +FGD(mAP) |                            config                            | weight | code |
-| :-----: | :-----: | :-----------: | :-------: | :----------------------------------------------------------: | :----: | :--: |
-| YOLOX-m | YOLOX-l |     45.9      |   46.6    | [config](https://github.com/open-mmlab/mmdetection/blob/master/configs/yolox/yolox_m_8x8_300e_coco.py) |   [baidu](https://pan.baidu.com/s/1oagBUUV9RJReRdd4O-PV6Q?pwd=af9g)     |   af9g   |
-1. Please refer branch yolox 
+### Major features
 
-## Citation
-```
-@inproceedings{yang2022focal,
-  title={Focal and global knowledge distillation for detectors},
-  author={Yang, Zhendong and Li, Zhe and Jiang, Xiaohu and Gong, Yuan and Yuan, Zehuan and Zhao, Danpei and Yuan, Chun},
-  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
-  pages={4643--4652},
-  year={2022}
-}
-```
+- **Modular Design**
 
+  We decompose the detection framework into different components and one can easily construct a customized object detection framework by combining different modules.
+
+- **Support of multiple frameworks out of box**
+
+  The toolbox directly supports popular and contemporary detection frameworks, *e.g.* Faster RCNN, Mask RCNN, RetinaNet, etc.
+
+- **High efficiency**
+
+  All basic bbox and mask operations run on GPUs. The training speed is faster than or comparable to other codebases, including [Detectron2](https://github.com/facebookresearch/detectron2), [maskrcnn-benchmark](https://github.com/facebookresearch/maskrcnn-benchmark) and [SimpleDet](https://github.com/TuSimple/simpledet).
+
+- **State of the art**
+
+  The toolbox stems from the codebase developed by the *MMDet* team, who won [COCO Detection Challenge](http://cocodataset.org/#detection-leaderboard) in 2018, and we keep pushing it forward.
+
+Apart from MMDetection, we also released a library [mmcv](https://github.com/open-mmlab/mmcv) for computer vision research, which is heavily depended on by this toolbox.
+
+## License
+
+This project is released under the [Apache 2.0 license](LICENSE).
+
+## Changelog
+
+v2.11.0 was released in 01/04/2021.
+Please refer to [changelog.md](docs/changelog.md) for details and release history.
+A comparison between v1.x and v2.0 codebases can be found in [compatibility.md](docs/compatibility.md).
+
+## Benchmark and model zoo
+
+Results and models are available in the [model zoo](docs/model_zoo.md).
+
+Supported backbones:
+
+- [x] ResNet (CVPR'2016)
+- [x] ResNeXt (CVPR'2017)
+- [x] VGG (ICLR'2015)
+- [x] HRNet (CVPR'2019)
+- [x] RegNet (CVPR'2020)
+- [x] Res2Net (TPAMI'2020)
+- [x] ResNeSt (ArXiv'2020)
+
+Supported methods:
+
+- [x] [RPN (NeurIPS'2015)](configs/rpn)
+- [x] [Fast R-CNN (ICCV'2015)](configs/fast_rcnn)
+- [x] [Faster R-CNN (NeurIPS'2015)](configs/faster_rcnn)
+- [x] [Mask R-CNN (ICCV'2017)](configs/mask_rcnn)
+- [x] [Cascade R-CNN (CVPR'2018)](configs/cascade_rcnn)
+- [x] [Cascade Mask R-CNN (CVPR'2018)](configs/cascade_rcnn)
+- [x] [SSD (ECCV'2016)](configs/ssd)
+- [x] [RetinaNet (ICCV'2017)](configs/retinanet)
+- [x] [GHM (AAAI'2019)](configs/ghm)
+- [x] [Mask Scoring R-CNN (CVPR'2019)](configs/ms_rcnn)
+- [x] [Double-Head R-CNN (CVPR'2020)](configs/double_heads)
+- [x] [Hybrid Task Cascade (CVPR'2019)](configs/htc)
+- [x] [Libra R-CNN (CVPR'2019)](configs/libra_rcnn)
+- [x] [Guided Anchoring (CVPR'2019)](configs/guided_anchoring)
+- [x] [FCOS (ICCV'2019)](configs/fcos)
+- [x] [RepPoints (ICCV'2019)](configs/reppoints)
+- [x] [Foveabox (TIP'2020)](configs/foveabox)
+- [x] [FreeAnchor (NeurIPS'2019)](configs/free_anchor)
+- [x] [NAS-FPN (CVPR'2019)](configs/nas_fpn)
+- [x] [ATSS (CVPR'2020)](configs/atss)
+- [x] [FSAF (CVPR'2019)](configs/fsaf)
+- [x] [PAFPN (CVPR'2018)](configs/pafpn)
+- [x] [Dynamic R-CNN (ECCV'2020)](configs/dynamic_rcnn)
+- [x] [PointRend (CVPR'2020)](configs/point_rend)
+- [x] [CARAFE (ICCV'2019)](configs/carafe/README.md)
+- [x] [DCNv2 (CVPR'2019)](configs/dcn/README.md)
+- [x] [Group Normalization (ECCV'2018)](configs/gn/README.md)
+- [x] [Weight Standardization (ArXiv'2019)](configs/gn+ws/README.md)
+- [x] [OHEM (CVPR'2016)](configs/faster_rcnn/faster_rcnn_r50_fpn_ohem_1x_coco.py)
+- [x] [Soft-NMS (ICCV'2017)](configs/faster_rcnn/faster_rcnn_r50_fpn_soft_nms_1x_coco.py)
+- [x] [Generalized Attention (ICCV'2019)](configs/empirical_attention/README.md)
+- [x] [GCNet (ICCVW'2019)](configs/gcnet/README.md)
+- [x] [Mixed Precision (FP16) Training (ArXiv'2017)](configs/fp16/README.md)
+- [x] [InstaBoost (ICCV'2019)](configs/instaboost/README.md)
+- [x] [GRoIE (ICPR'2020)](configs/groie/README.md)
+- [x] [DetectoRS (ArXix'2020)](configs/detectors/README.md)
+- [x] [Generalized Focal Loss (NeurIPS'2020)](configs/gfl/README.md)
+- [x] [CornerNet (ECCV'2018)](configs/cornernet/README.md)
+- [x] [Side-Aware Boundary Localization (ECCV'2020)](configs/sabl/README.md)
+- [x] [YOLOv3 (ArXiv'2018)](configs/yolo/README.md)
+- [x] [PAA (ECCV'2020)](configs/paa/README.md)
+- [x] [YOLACT (ICCV'2019)](configs/yolact/README.md)
+- [x] [CentripetalNet (CVPR'2020)](configs/centripetalnet/README.md)
+- [x] [VFNet (ArXix'2020)](configs/vfnet/README.md)
+- [x] [DETR (ECCV'2020)](configs/detr/README.md)
+- [x] [CascadeRPN (NeurIPS'2019)](configs/cascade_rpn/README.md)
+- [x] [SCNet (AAAI'2021)](configs/scnet/README.md)
+
+Some other methods are also supported in [projects using MMDetection](./docs/projects.md).
+
+## Installation
+
+Please refer to [get_started.md](docs/get_started.md) for installation.
+
+## Getting Started
+
+Please see [get_started.md](docs/get_started.md) for the basic usage of MMDetection.
+We provide [colab tutorial](demo/MMDet_Tutorial.ipynb), and full guidance for quick run [with existing dataset](docs/1_exist_data_model.md) and [with new dataset](docs/2_new_data_model.md) for beginners.
+There are also tutorials for [finetuning models](docs/tutorials/finetune.md), [adding new dataset](docs/tutorials/new_dataset.md), [designing data pipeline](docs/tutorials/data_pipeline.md), [customizing models](docs/tutorials/customize_models.md), [customizing runtime settings](docs/tutorials/customize_runtime.md) and [useful tools](docs/useful_tools.md).
+
+Please refer to [FAQ](docs/faq.md) for frequently asked questions.
+
+## Contributing
+
+We appreciate all contributions to improve MMDetection. Please refer to [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the contributing guideline.
 
 ## Acknowledgement
 
-Our code is based on the project [MMDetection](https://github.com/open-mmlab/mmdetection).
+MMDetection is an open source project that is contributed by researchers and engineers from various colleges and companies. We appreciate all the contributors who implement their methods or add new features, as well as users who give valuable feedbacks.
+We wish that the toolbox and benchmark could serve the growing research community by providing a flexible toolkit to reimplement existing methods and develop their own new detectors.
 
-Thanks to the work [GCNet](https://github.com/xvjiarui/GCNet) and [mmetection-distiller](https://github.com/pppppM/mmdetection-distiller).
+## Citation
+
+If you use this toolbox or benchmark in your research, please cite this project.
+
+```
+@article{mmdetection,
+  title   = {{MMDetection}: Open MMLab Detection Toolbox and Benchmark},
+  author  = {Chen, Kai and Wang, Jiaqi and Pang, Jiangmiao and Cao, Yuhang and
+             Xiong, Yu and Li, Xiaoxiao and Sun, Shuyang and Feng, Wansen and
+             Liu, Ziwei and Xu, Jiarui and Zhang, Zheng and Cheng, Dazhi and
+             Zhu, Chenchen and Cheng, Tianheng and Zhao, Qijie and Li, Buyu and
+             Lu, Xin and Zhu, Rui and Wu, Yue and Dai, Jifeng and Wang, Jingdong
+             and Shi, Jianping and Ouyang, Wanli and Loy, Chen Change and Lin, Dahua},
+  journal= {arXiv preprint arXiv:1906.07155},
+  year={2019}
+}
+```
+
+## Projects in OpenMMLab
+
+- [MMCV](https://github.com/open-mmlab/mmcv): OpenMMLab foundational library for computer vision.
+- [MMClassification](https://github.com/open-mmlab/mmclassification): OpenMMLab image classification toolbox and benchmark.
+- [MMDetection](https://github.com/open-mmlab/mmdetection): OpenMMLab detection toolbox and benchmark.
+- [MMDetection3D](https://github.com/open-mmlab/mmdetection3d): OpenMMLab's next-generation platform for general 3D object detection.
+- [MMSegmentation](https://github.com/open-mmlab/mmsegmentation): OpenMMLab semantic segmentation toolbox and benchmark.
+- [MMAction2](https://github.com/open-mmlab/mmaction2): OpenMMLab's next-generation action understanding toolbox and benchmark.
+- [MMTracking](https://github.com/open-mmlab/mmtracking): OpenMMLab video perception toolbox and benchmark.
+- [MMPose](https://github.com/open-mmlab/mmpose): OpenMMLab pose estimation toolbox and benchmark.
+- [MMEditing](https://github.com/open-mmlab/mmediting): OpenMMLab image and video editing toolbox.

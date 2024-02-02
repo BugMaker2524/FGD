@@ -145,7 +145,6 @@ class DetectionDistiller(BaseDetector):
             
             student_feat = buffer_dict[student_module]
             teacher_feat = buffer_dict[teacher_module]
-
             for item_loss in item_loc.methods:
                 loss_name = item_loss.name
                 
