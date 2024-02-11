@@ -145,14 +145,14 @@ distiller = dict(
                  ]
 )
 
-student_cfg = '../configs/gfl/gfl_r50_fpn_1x_coco.py'
-teacher_cfg = '../configs/gfl/gfl_r101_fpn_mstrain_2x_coco.py'
+student_cfg = '../configs/defect_det/gfl_r50_fpn_1x_coco_pcb.py'
+teacher_cfg = '../configs/defect_det/gfl_r101_fpn_mstrain_2x_coco_pcb.py'
 optimizer_config = dict(_delete_=True, grad_clip=dict(max_norm=35, norm_type=2))
 
 classes = ("missing_hole", "mouse_bite", "open_circuit", "short", "spur", "spurious_copper")
 data = dict(
     samples_per_gpu=8,  # batch size
-    workers_per_gpu=8,  # num_workers
+    workers_per_gpu=2,  # num_workers
     train=dict(
         img_prefix='/mnt/data/yx/defectdet/PCB/images/train',
         classes=classes,
