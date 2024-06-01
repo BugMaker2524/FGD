@@ -5,6 +5,63 @@ from mmcv.cnn import constant_init, kaiming_init
 from ..builder import DISTILL_LOSSES
 
 
+class EMA(nn.Module):
+    def __init__(self, channels, c2=None, factor=32):
+        super(EMA, self).__init__()
+        self.groups = factor
+        assert channels // self.groups > 0
+        self.softmax = nn.Softmax(-1)
+        self.agp = nn.AdaptiveAvgPool2d((1, 1))
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
+        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
+        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
+        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        group_x = x.reshape(b * self.groups, -1, h, w)  # b*g,c//g,h,w
+        x_h = self.pool_h(group_x)
+        x_w = self.pool_w(group_x).permute(0, 1, 3, 2)
+        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
+        x_h, x_w = torch.split(hw, [h, w], dim=2)
+        x1 = self.gn(group_x * x_h.sigmoid() * x_w.permute(0, 1, 3, 2).sigmoid())
+        x2 = self.conv3x3(group_x)
+        x11 = self.softmax(self.agp(x1).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
+        x12 = x2.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
+        x21 = self.softmax(self.agp(x2).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
+        x22 = x1.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
+        weights = (torch.matmul(x11, x12) + torch.matmul(x21, x22)).reshape(b * self.groups, 1, h, w)
+        return (group_x * weights.sigmoid()).reshape(b, c, h, w)
+
+
+class LSKblock(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.conv0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
+        self.conv_spatial = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
+        self.conv1 = nn.Conv2d(dim, dim // 2, 1)
+        self.conv2 = nn.Conv2d(dim, dim // 2, 1)
+        self.conv_squeeze = nn.Conv2d(2, 2, 7, padding=3)
+        self.conv = nn.Conv2d(dim // 2, dim, 1)
+
+    def forward(self, x):
+        attn1 = self.conv0(x)
+        attn2 = self.conv_spatial(attn1)
+
+        attn1 = self.conv1(attn1)
+        attn2 = self.conv2(attn2)
+
+        attn = torch.cat([attn1, attn2], dim=1)
+        avg_attn = torch.mean(attn, dim=1, keepdim=True)
+        max_attn, _ = torch.max(attn, dim=1, keepdim=True)
+        agg = torch.cat([avg_attn, max_attn], dim=1)
+        sig = self.conv_squeeze(agg).sigmoid()
+        attn = attn1 * sig[:, 0, :, :].unsqueeze(1) + attn2 * sig[:, 1, :, :].unsqueeze(1)
+        attn = self.conv(attn)
+        return x * attn
+
+
 @DISTILL_LOSSES.register_module()
 class FeatureLoss(nn.Module):
     """PyTorch version of `Focal and Global Knowledge Distillation for Detectors`
@@ -25,8 +82,8 @@ class FeatureLoss(nn.Module):
                  teacher_channels,
                  name,
                  temp=0.5,
-                 alpha_fgd=0.001,
-                 beta_fgd=0.0005,
+                 alpha_fgd=0.1,
+                 beta_fgd=0.05,
                  gamma_fgd=0.001,
                  lambda_fgd=0.000005,
                  ):
@@ -54,8 +111,71 @@ class FeatureLoss(nn.Module):
             nn.LayerNorm([teacher_channels // 2, 1, 1]),
             nn.ReLU(inplace=True),  # yapf: disable
             nn.Conv2d(teacher_channels // 2, teacher_channels, kernel_size=1))
+        self.ema_atten_t = EMA(teacher_channels)
+        self.ema_atten_s = EMA(student_channels)
 
         self.reset_parameters()
+
+    # def forward(self,
+    #             preds_S,
+    #             preds_T,
+    #             gt_bboxes,
+    #             img_metas):
+    #     """Forward function.
+    #     Args:
+    #         preds_S(Tensor): Bs*C*H*W, student's feature map
+    #         preds_T(Tensor): Bs*C*H*W, teacher's feature map
+    #         gt_bboxes(tuple): Bs*[nt*4], pixel decimal: (tl_x, tl_y, br_x, br_y)
+    #         img_metas (list[dict]): Meta information of each image, e.g.,
+    #         image size, scaling factor, etc.
+    #     """
+    #     assert preds_S.shape[-2:] == preds_T.shape[-2:], 'the output dim of teacher and student differ'
+    #     if self.align is not None:
+    #         preds_S = self.align(preds_S)
+    #
+    #     # [8, 256, 7, 10]
+    #     N, C, H, W = preds_S.shape
+    #
+    #     # [B, H, W], [B, C]
+    #     S_attention_t, C_attention_t = self.get_attention(preds_T, self.temp)
+    #     S_attention_s, C_attention_s = self.get_attention(preds_S, self.temp)
+    #
+    #     # [B, H, W], [B, H, W]
+    #     Mask_fg = torch.zeros_like(S_attention_t)
+    #     Mask_bg = torch.ones_like(S_attention_t)
+    #     wmin, wmax, hmin, hmax = [], [], [], []
+    #     for i in range(N):
+    #         new_boxxes = torch.ones_like(gt_bboxes[i])
+    #         new_boxxes[:, 0] = gt_bboxes[i][:, 0] / img_metas[i]['img_shape'][1] * W
+    #         new_boxxes[:, 2] = gt_bboxes[i][:, 2] / img_metas[i]['img_shape'][1] * W
+    #         new_boxxes[:, 1] = gt_bboxes[i][:, 1] / img_metas[i]['img_shape'][0] * H
+    #         new_boxxes[:, 3] = gt_bboxes[i][:, 3] / img_metas[i]['img_shape'][0] * H
+    #
+    #         wmin.append(torch.floor(new_boxxes[:, 0]).int())
+    #         wmax.append(torch.ceil(new_boxxes[:, 2]).int())
+    #         hmin.append(torch.floor(new_boxxes[:, 1]).int())
+    #         hmax.append(torch.ceil(new_boxxes[:, 3]).int())
+    #
+    #         area = 1.0 / (hmax[i].view(1, -1) + 1 - hmin[i].view(1, -1)) / (
+    #                 wmax[i].view(1, -1) + 1 - wmin[i].view(1, -1))
+    #
+    #         for j in range(len(gt_bboxes[i])):
+    #             Mask_fg[i][hmin[i][j]:hmax[i][j] + 1, wmin[i][j]:wmax[i][j] + 1] = \
+    #                 torch.maximum(Mask_fg[i][hmin[i][j]:hmax[i][j] + 1, wmin[i][j]:wmax[i][j] + 1], area[0][j])
+    #
+    #         Mask_bg[i] = torch.where(Mask_fg[i] > 0, 0, 1)
+    #         if torch.sum(Mask_bg[i]):
+    #             Mask_bg[i] /= torch.sum(Mask_bg[i])
+    #
+    #     fg_loss, bg_loss = self.get_fea_loss(preds_S, preds_T, Mask_fg, Mask_bg,
+    #                                          C_attention_s, C_attention_t, S_attention_s, S_attention_t)
+    #     mask_loss = self.get_mask_loss(C_attention_s, C_attention_t, S_attention_s, S_attention_t)
+    #     rela_loss = self.get_rela_loss(preds_S, preds_T)
+    #
+    #     loss = self.alpha_fgd * fg_loss + self.beta_fgd * bg_loss \
+    #            + self.gamma_fgd * mask_loss + self.lambda_fgd * rela_loss
+    #
+    #     return loss
 
     def forward(self,
                 preds_S,
@@ -98,7 +218,7 @@ class FeatureLoss(nn.Module):
             hmax.append(torch.ceil(new_boxxes[:, 3]).int())
 
             area = 1.0 / (hmax[i].view(1, -1) + 1 - hmin[i].view(1, -1)) / (
-                        wmax[i].view(1, -1) + 1 - wmin[i].view(1, -1))
+                    wmax[i].view(1, -1) + 1 - wmin[i].view(1, -1))
 
             for j in range(len(gt_bboxes[i])):
                 Mask_fg[i][hmin[i][j]:hmax[i][j] + 1, wmin[i][j]:wmax[i][j] + 1] = \
@@ -108,13 +228,10 @@ class FeatureLoss(nn.Module):
             if torch.sum(Mask_bg[i]):
                 Mask_bg[i] /= torch.sum(Mask_bg[i])
 
-        fg_loss, bg_loss = self.get_fea_loss(preds_S, preds_T, Mask_fg, Mask_bg,
-                                             C_attention_s, C_attention_t, S_attention_s, S_attention_t)
-        mask_loss = self.get_mask_loss(C_attention_s, C_attention_t, S_attention_s, S_attention_t)
-        rela_loss = self.get_rela_loss(preds_S, preds_T)
-
-        loss = self.alpha_fgd * fg_loss + self.beta_fgd * bg_loss \
-               + self.gamma_fgd * mask_loss + self.lambda_fgd * rela_loss
+        feat_t = self.ema_atten_t(preds_T)
+        feat_s = self.ema_atten_s(preds_S)
+        fg_loss, bg_loss = self.get_fbi_loss(feat_t, feat_s, Mask_fg, Mask_bg)
+        loss = self.alpha_fgd * fg_loss + self.beta_fgd * bg_loss
 
         return loss
 
@@ -239,3 +356,18 @@ class FeatureLoss(nn.Module):
 
         self.last_zero_init(self.channel_add_conv_s)
         self.last_zero_init(self.channel_add_conv_t)
+
+    def get_fbi_loss(self, fea_t, fea_s, Mask_fg, Mask_bg):
+        loss_mse = nn.MSELoss(reduction='sum')
+        Mask_fg = Mask_fg.unsqueeze(dim=1)
+        Mask_bg = Mask_bg.unsqueeze(dim=1)
+
+        fg_fea_t = torch.mul(fea_t, torch.sqrt(Mask_fg))
+        bg_fea_t = torch.mul(fea_t, torch.sqrt(Mask_bg))
+        fg_fea_s = torch.mul(fea_s, torch.sqrt(Mask_fg))
+        bg_fea_s = torch.mul(fea_s, torch.sqrt(Mask_bg))
+
+        fg_loss = loss_mse(fg_fea_s, fg_fea_t) / len(Mask_fg)
+        bg_loss = loss_mse(bg_fea_s, bg_fea_t) / len(Mask_bg)
+
+        return fg_loss, bg_loss
