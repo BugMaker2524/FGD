@@ -12,10 +12,19 @@ from ..builder import NECKS
 class LSKblock(nn.Module):
     def __init__(self, dim):
         super(LSKblock, self).__init__()
-        # self.conv0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
-        # self.conv_spatial = nn.Conv2d(dim, dim, 7, stride=1, padding=9, groups=dim, dilation=3)
-        self.conv0 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1).cuda()  # 将conv0的卷积核大小改为3x3
-        self.conv_spatial = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=1, dilation=1).cuda()  # 将conv_spatial的卷积核大小改为3x3
+        # 5+5
+        # self.conv0 = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, dilation=1).cuda()
+        # self.conv_spatial = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, dilation=1).cuda()
+        # 5+3
+        # self.conv0 = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, dilation=1).cuda()
+        # self.conv_spatial = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=2, dilation=2).cuda()
+        # 3+5
+        # self.conv0 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=2, dilation=2).cuda()
+        # self.conv_spatial = nn.Conv2d(dim, dim, kernel_size=5, stride=1, padding=2, dilation=1).cuda()
+        # 3+3
+        self.conv0 = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=2, dilation=2).cuda()
+        self.conv_spatial = nn.Conv2d(dim, dim, kernel_size=3, stride=1, padding=2, dilation=2).cuda()
+
         self.conv1 = nn.Conv2d(dim, dim // 2, 1).cuda()
         self.conv2 = nn.Conv2d(dim, dim // 2, 1).cuda()
         self.conv_squeeze = nn.Conv2d(2, 2, 7, padding=3).cuda()
@@ -201,6 +210,7 @@ class FPN(nn.Module):
     def forward(self, inputs):
         """Forward function."""
         assert len(inputs) == len(self.in_channels)
+
         inputs = list(inputs)
         for i, input_feat in enumerate(inputs):
             inputs[i] = self.lsk_block[i](input_feat)

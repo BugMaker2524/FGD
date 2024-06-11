@@ -82,8 +82,8 @@ class FeatureLoss(nn.Module):
                  teacher_channels,
                  name,
                  temp=0.5,
-                 alpha_fgd=0.1,
-                 beta_fgd=0.05,
+                 alpha_fgd=0.5,
+                 beta_fgd=0.1,
                  gamma_fgd=0.001,
                  lambda_fgd=0.000005,
                  ):
@@ -231,9 +231,12 @@ class FeatureLoss(nn.Module):
         feat_t = self.ema_atten_t(preds_T)
         feat_s = self.ema_atten_s(preds_S)
         fg_loss, bg_loss = self.get_fbi_loss(feat_t, feat_s, Mask_fg, Mask_bg)
-        loss = self.alpha_fgd * fg_loss + self.beta_fgd * bg_loss
+        loss_none = torch.tensor(0.0, device='cuda:0', requires_grad=False)
+        loss_fg = self.alpha_fgd * fg_loss
+        loss_bg = self.beta_fgd * bg_loss
+        loss_all = self.alpha_fgd * fg_loss + self.beta_fgd * bg_loss
 
-        return loss
+        return loss_all
 
     def get_attention(self, preds, temp):
         """ preds: Bs*C*W*H """

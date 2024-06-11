@@ -46,7 +46,8 @@ def plot_curve(log_dicts, args):
 
     num_metrics = len(metrics)
     for i, log_dict in enumerate(log_dicts):
-        epochs = list(log_dict.keys())
+        # Filter epochs based on end_epoch
+        epochs = [epoch for epoch in log_dict.keys() if epoch <= args.end_epoch]
         for j, metric in enumerate(metrics):
             print(f'plot curve of {args.json_logs[i]}, metric is {metric}')
             if metric not in log_dict[epochs[0]]:
@@ -54,10 +55,11 @@ def plot_curve(log_dicts, args):
                     f'{args.json_logs[i]} does not contain metric {metric}')
 
             if 'mAP' in metric:
-                xs = np.arange(1, max(epochs) + 1)
+                xs = np.arange(1, max(epochs) + 1, args.eval_interval)
                 ys = []
-                for epoch in epochs:
-                    ys += log_dict[epoch][metric]
+                for epoch in xs:
+                    if epoch in log_dict:
+                        ys += log_dict[epoch][metric]
                 ax = plt.gca()
                 ax.set_xticks(xs)
                 plt.xlabel('epoch')
@@ -103,6 +105,16 @@ def add_plot_parser(subparsers):
         nargs='+',
         default=['bbox_mAP'],
         help='the metric that you want to plot')
+    parser_plt.add_argument(
+        '--end-epoch',
+        type=int,
+        default=1,
+        help='the epoch that you want to end')
+    parser_plt.add_argument(
+        '--eval-interval',
+        type=int,
+        default=1,
+        help='the eval interval when training')
     parser_plt.add_argument('--title', type=str, help='title of figure')
     parser_plt.add_argument(
         '--legend',

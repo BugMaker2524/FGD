@@ -55,6 +55,7 @@ model = dict(
         nms=dict(type='nms', iou_threshold=0.6),
         max_per_img=100))
 
+# runner = dict(type='EpochBasedRunner', max_epochs=24)
 # model settings
 find_unused_parameters = True
 temp = 0.5

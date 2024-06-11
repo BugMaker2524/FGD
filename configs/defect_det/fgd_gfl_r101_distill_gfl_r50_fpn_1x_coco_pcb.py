@@ -58,8 +58,8 @@ model = dict(
 # model settings
 find_unused_parameters = True
 temp = 0.5
-alpha_fgd = 0.001
-beta_fgd = 0.0005
+alpha_fgd = 1
+beta_fgd = 0.5
 gamma_fgd = 0.0005
 lambda_fgd = 0.000005
 distiller = dict(
